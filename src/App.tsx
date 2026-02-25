@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback } from 'react';
 import * as XLSX from 'xlsx';
+import XLSXStyle from 'xlsx-js-style';
 import { 
   Upload, 
   FileSpreadsheet, 
@@ -13,7 +14,8 @@ import {
   Loader2, 
   CheckCircle2, 
   AlertCircle,
-  Plus
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -65,8 +67,17 @@ export default function App() {
     setConsolidatedData(null);
 
     try {
-      let allRows: any[] = [];
+      // Define the header row as the first element
+      const headerRow = [
+        "File", "Transaction #", "Tran Type", "Customer Name", 
+        "Address", "Address 2", "City", "Status", "zip", "Country", "Comments"
+      ];
+      
+      let allRows: any[][] = [headerRow];
       let processedFilesCount = 0;
+      
+      // Column indices (0-based): C=2, D=3, H=7, I=8, J=9, K=10, L=11, M=12, N=13, O=14
+      const targetIndices = [2, 3, 7, 8, 9, 10, 11, 12, 13, 14];
       
       for (const fileStatus of files) {
         const data = await fileStatus.file.arrayBuffer();
@@ -74,39 +85,36 @@ export default function App() {
         
         let fileRowsCount = 0;
         
-        // Process all sheets in the workbook
         for (const sheetName of workbook.SheetNames) {
           const worksheet = workbook.Sheets[sheetName];
-          // Use header: 1 to get an array of arrays, including the first row
           const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
           
           if (jsonData.length > 0) {
-            const dataWithSource = jsonData.map((row: any[]) => {
-              const rowArray = Array.isArray(row) ? row : [row];
-              return [...rowArray, fileStatus.file.name, sheetName];
+            const processedSheetRows = jsonData.map((row: any[]) => {
+              // Extract specific columns based on indices: C, D, H, I, J, K, L, M, N, O
+              const extractedCols = targetIndices.map(idx => row[idx] !== undefined ? row[idx] : "");
+              // Return extracted columns and an empty string for "Comments"
+              return [...extractedCols, ""];
             });
             
-            // Use concat to avoid stack size limits with push(...spread)
-            allRows = allRows.concat(dataWithSource);
+            allRows = allRows.concat(processedSheetRows);
             fileRowsCount += jsonData.length;
           }
         }
         
         processedFilesCount++;
-        
-        // Update status locally
         setFiles(prev => prev.map(f => 
           f.id === fileStatus.id ? { ...f, status: 'completed', rowCount: fileRowsCount } : f
         ));
       }
 
-      if (allRows.length === 0) {
+      if (allRows.length <= 1) { // Only header exists
         throw new Error("No data found in any of the uploaded files/sheets.");
       }
 
       setConsolidatedData(allRows);
       setSummary({
-        totalRows: allRows.length,
+        totalRows: allRows.length - 1, // Exclude header
         totalFiles: processedFilesCount
       });
 
@@ -124,10 +132,30 @@ export default function App() {
     try {
       // Use aoa_to_sheet since we are now using array of arrays
       const newSheet = XLSX.utils.aoa_to_sheet(consolidatedData);
+      
+      // Apply styles to the header row (row 1)
+      const range = XLSX.utils.decode_range(newSheet['!ref'] || 'A1');
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const address = XLSX.utils.encode_col(C) + "1";
+        if (!newSheet[address]) continue;
+        newSheet[address].s = {
+          font: { bold: true, color: { rgb: "000000" } },
+          fill: { fgColor: { rgb: "92D050" } }, // Green background from image
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } }
+          },
+          alignment: { horizontal: "center", vertical: "center" }
+        };
+      }
+
       const newWorkbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(newWorkbook, newSheet, "Consolidated Data");
 
-      const excelBuffer = XLSX.write(newWorkbook, { bookType: 'xlsx', type: 'array' });
+      // Use XLSXStyle to write with styles
+      const excelBuffer = XLSXStyle.write(newWorkbook, { bookType: 'xlsx', type: 'array' });
       const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
       
@@ -156,11 +184,8 @@ export default function App() {
             <div className="p-3 bg-emerald-600 rounded-xl text-white shadow-lg shadow-emerald-200">
               <FileSpreadsheet size={28} />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Excel Master Consolidator</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-zinc-900">Zyme consolidator</h1>
           </motion.div>
-          <p className="text-zinc-500 text-lg max-w-2xl">
-            Upload multiple files and we'll stack them vertically into one single sheet, preserving all columns and adding source metadata.
-          </p>
         </header>
 
         <main className="grid gap-8">
@@ -247,12 +272,19 @@ export default function App() {
                     ))}
                   </div>
 
-                  <div className="mt-6">
+                  <div className="mt-6 flex gap-3">
+                    <button
+                      onClick={() => { setFiles([]); setConsolidatedData(null); setSummary(null); setError(null); }}
+                      className="flex-1 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-all active:scale-[0.98]"
+                    >
+                      <Trash2 size={20} />
+                      Clear
+                    </button>
                     <button
                       onClick={consolidateFiles}
                       disabled={isConsolidating || files.length === 0}
                       className={cn(
-                        "w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all",
+                        "flex-[2] py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all",
                         isConsolidating 
                           ? "bg-zinc-100 text-zinc-400 cursor-not-allowed" 
                           : "bg-zinc-900 text-white hover:bg-black active:scale-[0.98]"
@@ -325,16 +357,16 @@ export default function App() {
                               <table className="w-full text-[10px] text-left">
                                 <thead className="bg-zinc-50 border-bottom border-zinc-200">
                                   <tr>
-                                    {Array.from({ length: Math.min(consolidatedData[0]?.length || 0, 4) }).map((_, idx) => (
-                                      <th key={idx} className="px-3 py-2 font-bold text-zinc-500 truncate max-w-[80px]">Col {idx + 1}</th>
+                                    {consolidatedData[0].slice(0, 5).map((header: string, idx: number) => (
+                                      <th key={idx} className="px-3 py-2 font-bold text-zinc-500 truncate max-w-[100px]">{header}</th>
                                     ))}
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {consolidatedData.slice(0, 5).map((row, i) => (
+                                  {consolidatedData.slice(1, 6).map((row, i) => (
                                     <tr key={i} className="border-t border-zinc-100">
-                                      {Array.isArray(row) ? row.slice(0, 4).map((val: any, j: number) => (
-                                        <td key={j} className="px-3 py-2 text-zinc-600 truncate max-w-[80px]">{String(val)}</td>
+                                      {Array.isArray(row) ? row.slice(0, 5).map((val: any, j: number) => (
+                                        <td key={j} className="px-3 py-2 text-zinc-600 truncate max-w-[100px]">{String(val)}</td>
                                       )) : (
                                         <td className="px-3 py-2 text-zinc-600 truncate">{String(row)}</td>
                                       )}
@@ -349,10 +381,17 @@ export default function App() {
 
                       <button
                         onClick={downloadConsolidated}
-                        className="mt-auto w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all active:scale-[0.98]"
+                        className="mt-auto w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold text-lg flex items-center justify-center gap-3 hover:bg-emerald-700 shadow-lg shadow-emerald-200 transition-all active:scale-[0.98] mb-3"
                       >
                         <Download size={22} />
                         Download Consolidated File
+                      </button>
+                      <button
+                        onClick={() => { setFiles([]); setConsolidatedData(null); setSummary(null); setError(null); }}
+                        className="w-full py-3 bg-zinc-100 text-zinc-600 rounded-2xl font-semibold flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all"
+                      >
+                        <Trash2 size={18} />
+                        Clear All & Start Over
                       </button>
                     </div>
                   )}
