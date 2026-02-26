@@ -37,6 +37,7 @@ export default function App() {
   const [isConsolidating, setIsConsolidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [consolidatedData, setConsolidatedData] = useState<any[] | null>(null);
+  const [rawConsolidatedData, setRawConsolidatedData] = useState<any[] | null>(null);
   const [summary, setSummary] = useState<{ totalRows: number; totalFiles: number } | null>(null);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -48,6 +49,7 @@ export default function App() {
       }));
       setFiles(prev => [...prev, ...newFiles]);
       setConsolidatedData(null);
+      setRawConsolidatedData(null);
       setSummary(null);
       setError(null);
     }
@@ -56,6 +58,7 @@ export default function App() {
   const removeFile = (id: string) => {
     setFiles(prev => prev.filter(f => f.id !== id));
     setConsolidatedData(null);
+    setRawConsolidatedData(null);
     setSummary(null);
   };
 
@@ -65,6 +68,7 @@ export default function App() {
     setIsConsolidating(true);
     setError(null);
     setConsolidatedData(null);
+    setRawConsolidatedData(null);
 
     try {
       // Define the header row as the first element
@@ -74,6 +78,7 @@ export default function App() {
       ];
       
       let allRows: any[][] = [headerRow];
+      let allRawRows: any[][] = [];
       let processedFilesCount = 0;
       
       // Column indices (0-based): C=2, D=3, H=7, I=8, J=9, K=10, L=11, M=12, N=13, O=14
@@ -98,6 +103,7 @@ export default function App() {
             });
             
             allRows = allRows.concat(processedSheetRows);
+            allRawRows = allRawRows.concat(jsonData);
             fileRowsCount += jsonData.length;
           }
         }
@@ -113,6 +119,7 @@ export default function App() {
       }
 
       setConsolidatedData(allRows);
+      setRawConsolidatedData(allRawRows);
       setSummary({
         totalRows: allRows.length - 1, // Exclude header
         totalFiles: processedFilesCount
@@ -130,7 +137,7 @@ export default function App() {
     if (!consolidatedData) return;
 
     try {
-      // Use aoa_to_sheet since we are now using array of arrays
+      // Sheet 1: Formatted Data
       const newSheet = XLSX.utils.aoa_to_sheet(consolidatedData);
       
       // Apply styles to the header row (row 1)
@@ -153,6 +160,12 @@ export default function App() {
 
       const newWorkbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(newWorkbook, newSheet, "Consolidated Data");
+
+      // Sheet 2: Raw Data (if available)
+      if (rawConsolidatedData && rawConsolidatedData.length > 0) {
+        const rawSheet = XLSX.utils.aoa_to_sheet(rawConsolidatedData);
+        XLSX.utils.book_append_sheet(newWorkbook, rawSheet, "Raw Data");
+      }
 
       // Use XLSXStyle to write with styles
       const excelBuffer = XLSXStyle.write(newWorkbook, { bookType: 'xlsx', type: 'array' });
@@ -274,7 +287,7 @@ export default function App() {
 
                   <div className="mt-6 flex gap-3">
                     <button
-                      onClick={() => { setFiles([]); setConsolidatedData(null); setSummary(null); setError(null); }}
+                      onClick={() => { setFiles([]); setConsolidatedData(null); setRawConsolidatedData(null); setSummary(null); setError(null); }}
                       className="flex-1 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 transition-all active:scale-[0.98]"
                     >
                       <Trash2 size={20} />
@@ -387,7 +400,7 @@ export default function App() {
                         Download Consolidated File
                       </button>
                       <button
-                        onClick={() => { setFiles([]); setConsolidatedData(null); setSummary(null); setError(null); }}
+                        onClick={() => { setFiles([]); setConsolidatedData(null); setRawConsolidatedData(null); setSummary(null); setError(null); }}
                         className="w-full py-3 bg-zinc-100 text-zinc-600 rounded-2xl font-semibold flex items-center justify-center gap-2 hover:bg-zinc-200 transition-all"
                       >
                         <Trash2 size={18} />
